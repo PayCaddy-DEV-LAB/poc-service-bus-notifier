@@ -1,0 +1,70 @@
+{
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "sbemulatorns",
+        "Queues": [],
+        "Topics": [
+          {
+            "Name": "webhook-events",
+            "Properties": {
+              "DefaultMessageTimeToLive": "PT1H",
+              "DuplicateDetectionHistoryTimeWindow": "PT1M",
+              "RequiresDuplicateDetection": false,
+              "EnablePartitioning": false,
+              "MaxSizeInMegabytes": 1024,
+              "MaxMessageSizeInKilobytes": 1024
+            },
+            "Subscriptions": [
+              {
+                "Name": "client-acme",
+                "Properties": {
+                  "MaxDeliveryCount": 3,
+                  "LockDuration": "PT30S",
+                  "DefaultMessageTimeToLive": "PT1H",
+                  "DeadLetteringOnMessageExpiration": false,
+                  "EnableDeadLetteringOnFilterEvaluationExceptions": true
+                },
+                "Rules": [
+                  {
+                    "Name": "clientIdFilter",
+                    "Properties": {
+                      "FilterType": "Sql",
+                      "SqlFilter": {
+                        "SqlExpression": "clientId = 'acme'"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "Name": "client-firstbank",
+                "Properties": {
+                  "MaxDeliveryCount": 3,
+                  "LockDuration": "PT30S",
+                  "DefaultMessageTimeToLive": "PT1H",
+                  "DeadLetteringOnMessageExpiration": false,
+                  "EnableDeadLetteringOnFilterEvaluationExceptions": true
+                },
+                "Rules": [
+                  {
+                    "Name": "clientIdFilter",
+                    "Properties": {
+                      "FilterType": "Sql",
+                      "SqlFilter": {
+                        "SqlExpression": "clientId = 'firstbank'"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "Logging": {
+      "Type": "File"
+    }
+  }
+}

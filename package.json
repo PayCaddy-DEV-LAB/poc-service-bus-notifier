@@ -1,0 +1,32 @@
+{
+  "name": "event-bus-poc",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "infra:up": "docker compose -f docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f docker/docker-compose.yml down",
+    "mock:regular": "tsx mock-servers/regular-client.ts",
+    "mock:jit": "tsx mock-servers/jit-client.ts",
+    "produce": "tsx src/producer.ts",
+    "consume": "tsx src/consumer.ts",
+    "check-dlq": "tsx scripts/check-dlq.ts",
+    "query": "tsx scripts/query-tracking.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/service-bus": "^7.9.5",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^9.6.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5"
+  }
+}
