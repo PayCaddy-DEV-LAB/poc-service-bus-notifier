@@ -15,18 +15,24 @@ A proof of concept showing how Azure Service Bus can replace fire-and-forget web
 ## Architecture
 
 ```
-company-api
+company-api  ──or──  api-client mock (:3003)
+    │                   │
+    │   POST /v2/SR/EndUserSRs  →  real PayCaddy staging  →  publishes enduser.created
+    │   POST /mock/:eventType   →  publishes directly (no upstream call)
     │
     └─► Topic: webhook-events
             │
-            ├─► Subscription: client-acme       [filter: clientId = 'acme']  ─► DLQ
-            └─► Subscription: client-firstbank  [filter: clientId = 'firstbank'] ─► DLQ
+            ├─► Subscription: client-acme       [filter: clientId = 'acme']       ─► DLQ
+            ├─► Subscription: client-firstbank  [filter: clientId = 'firstbank']  ─► DLQ
+            └─► Subscription: client-<poc-uuid> [filter: clientId = '<poc-uuid>'] ─► DLQ
                     │
                     └─► Consumer Worker
                             │
-                            ├─► Regular clients  →  POST + X-Api-Key
-                            ├─► JIT/Bank clients →  POST + HMAC-SHA256 (mTLS, OAuth: TODO)
+                            ├─► Regular clients  →  POST + X-Api-Key   (:3001)
+                            ├─► JIT/Bank clients →  POST + HMAC-SHA256 (:3002)  (mTLS, OAuth: TODO)
                             └─► SQLite tracking table  (delivery_log)
+                                        │
+                                        └─► Dashboard  http://localhost:3000
 ```
 
 **Key rules:**
