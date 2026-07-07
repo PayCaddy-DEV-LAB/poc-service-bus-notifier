@@ -330,18 +330,24 @@ Una prueba de concepto que demuestra cómo Azure Service Bus puede reemplazar el
 ## Arquitectura
 
 ```
-company-api
+company-api  ──o──  api-client mock (:3003)
+    │                   │
+    │   POST /v2/SR/EndUserSRs  →  PayCaddy staging real  →  publica enduser.created
+    │   POST /mock/:eventType   →  publica directo (sin llamada upstream)
     │
     └─► Topic: webhook-events
             │
             ├─► Subscription: client-acme       [filtro: clientId = 'acme']       ─► DLQ
-            └─► Subscription: client-firstbank  [filtro: clientId = 'firstbank']  ─► DLQ
+            ├─► Subscription: client-firstbank  [filtro: clientId = 'firstbank']  ─► DLQ
+            └─► Subscription: client-<poc-uuid> [filtro: clientId = '<poc-uuid>'] ─► DLQ
                     │
                     └─► Consumer Worker
                             │
-                            ├─► Clientes regulares  →  POST + X-Api-Key
-                            ├─► Clientes JIT/Banco  →  POST + HMAC-SHA256 (mTLS, OAuth: TODO)
+                            ├─► Clientes regulares  →  POST + X-Api-Key   (:3001)
+                            ├─► Clientes JIT/Banco  →  POST + HMAC-SHA256 (:3002)  (mTLS, OAuth: TODO)
                             └─► Tabla de tracking SQLite  (delivery_log)
+                                        │
+                                        └─► Dashboard  http://localhost:3000
 ```
 
 **Reglas clave:**
@@ -375,7 +381,7 @@ npm run infra:up
 docker logs -f $(docker ps -q --filter ancestor=mcr.microsoft.com/azure-messaging/servicebus-emulator)
 ```
 
-### Correr el flujo completo (4 terminales)
+### Correr el flujo completo (5 terminales)
 
 ```bash
 # Terminal 1 — mock cliente regular (puerto 3001)
@@ -384,16 +390,68 @@ npm run mock:regular
 # Terminal 2 — mock cliente JIT/banco (puerto 3002)
 npm run mock:jit
 
-# Terminal 3 — consumer worker
+# Terminal 3 — mock api-client / proxy PayCaddy (puerto 3003)
+npm run mock:api-client
+
+# Terminal 4 — consumer worker
 npm run consume
 
-# Terminal 4 — publicar eventos de prueba
+# Terminal 5 — dashboard visual (http://localhost:3000)
+npm run dashboard
+```
+
+Luego disparar eventos con cualquiera de los métodos de la sección **Disparar Eventos** más abajo.
+
+---
+
+## Dashboard
+
+Dashboard web en vivo para presentaciones del PoC. Correrlo con `npm run dashboard` y abrir `http://localhost:3000`.
+
+**Qué muestra:**
+- **Estadísticas generales** — total de eventos, entregados, fallidos, en DLQ y tasa de éxito.
+- **Cards por cliente** — una card por cliente con barra de desglose por color (verde = entregado, naranja = fallido, rojo = DLQ), método de auth y hora del último evento.
+- **Log de entregas** — últimas 60 entradas con estado, tipo de evento, cliente, código HTTP, número de intento y timestamp.
+
+El dashboard consulta la API cada 2 segundos. Las filas nuevas parpadean brevemente al aparecer. Sin build step ni dependencias adicionales — corre sobre el mismo stack Express + SQLite del resto del proyecto.
+
+---
+
+## Disparar Eventos
+
+Tres formas de generar eventos, de más simple a más realista:
+
+### Opción 1 — Producer directo (cualquier cliente, cualquier tipo de evento)
+
+Publica directo a Service Bus sin pasar por ninguna capa HTTP. El payload es un objeto genérico `{amount, currency, reference}`.
+
+```bash
 npm run produce -- --clientId acme --eventType payment.completed --count 2
 npm run produce -- --clientId firstbank --eventType payment.completed --count 2
-
-# Ver el tracking
-npm run query
+npm run produce -- --clientId a41315dd-fdee-4ff3-a0c9-01905aa9dc2c --eventType user.created
 ```
+
+### Opción 2 — API PayCaddy real (vía proxy api-client en puerto 3003)
+
+Llama a la API de staging de PayCaddy. Con respuesta 2xx publica el evento correspondiente al bus. Requiere `PAYCADDY_API_KEY` en `.env` y `npm run mock:api-client` corriendo.
+
+| Ruta | Evento publicado |
+|------|-----------------|
+| `POST /v2/SR/EndUserSRs` | `enduser.created` |
+| `POST /v1/wallets` | `wallet.created` |
+| `POST /v1/debitCards` | `card.created` |
+
+### Opción 3 — Mock trigger (sin API real, cualquier tipo de evento + payload custom)
+
+Publica cualquier evento directo al bus sin llamar a PayCaddy. Útil cuando no se tiene API key válida o se quiere demostrar un payload específico.
+
+```bash
+curl -X POST http://localhost:3003/mock/user.created \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "usr_123", "name": "Jane Doe", "email": "jane@acme.com"}'
+```
+
+Las tres opciones también están disponibles como requests listos para enviar en **`requests.http`** (formato VS Code REST Client).
 
 ---
 
@@ -411,7 +469,7 @@ npm run query -- --clientId acme
 # Filtrar por estado
 npm run query -- --clientId acme --status FAILED
 
-# Inspeccionar mensajes en dead-letter de un cliente
+# Drenar y registrar mensajes en dead-letter de un cliente
 npm run check-dlq -- --clientId acme
 ```
 
@@ -422,6 +480,10 @@ npm run check-dlq -- --clientId acme
 | `DELIVERED` | Se recibió HTTP 2xx del endpoint del cliente                            |
 | `FAILED`    | El intento de entrega falló (non-2xx o error de red). Se reintentará.   |
 | `DLQ`       | Se agotaron todos los reintentos. Mensaje en dead-letter queue.          |
+
+**Importante — estado DLQ y el dashboard:**
+
+El consumer solo lee la queue principal de cada subscription. Cuando un mensaje agota todos los reintentos, Service Bus lo mueve al sub-queue de DLQ silenciosamente — el consumer no lo vuelve a ver. El estado `DLQ` en SQLite (y por ende en el dashboard) solo se escribe cuando se corre `npm run check-dlq`. Hasta entonces, el mensaje va a mostrar tres filas `FAILED` y el contador DLQ del dashboard va a seguir en cero, aunque el mensaje ya esté en el DLQ del broker.
 
 ---
 
@@ -554,7 +616,9 @@ async function getConfig(clientId: string): Promise<ClientConfig> {
 | Registro de clientes | Hardcodeado en `src/config.ts` | Tabla en base de datos, refrescada por mensaje |
 | Creación de subscriptions | Pre-declaradas en JSON, requiere reinicio del emulador | `ServiceBusAdministrationClient` en el onboarding |
 | Storage de tracking | SQLite (`data/tracking.db`) | Postgres / Azure SQL |
-| Monitoreo de DLQ | Manual con `npm run check-dlq` | Procesador continuo de DLQ + alertas |
+| Dashboard | Servidor Express local (`npm run dashboard`) | Herramienta interna hosteada contra DB de producción |
+| Monitoreo de DLQ | Manual con `npm run check-dlq` para sincronizar a SQLite | Procesador continuo de DLQ + alertas |
+| Disparo de eventos | `requests.http` + endpoint mock trigger | APIs internas únicamente |
 | Secrets de auth | Strings hardcodeados | Azure Key Vault |
 | JIT: mTLS | Stub (TODO) | `https.Agent` con certificado de cliente por banco |
 | JIT: OAuth | Stub (TODO) | Client credentials grant con caché de tokens |
