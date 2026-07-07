@@ -7,10 +7,12 @@
     "infra:down": "docker compose -f docker/docker-compose.yml down",
     "mock:regular": "tsx mock-servers/regular-client.ts",
     "mock:jit": "tsx mock-servers/jit-client.ts",
+    "mock:api-client": "tsx mock-servers/api-client.ts",
     "produce": "tsx src/producer.ts",
     "consume": "tsx src/consumer.ts",
     "check-dlq": "tsx scripts/check-dlq.ts",
     "query": "tsx scripts/query-tracking.ts",
+    "dashboard": "tsx src/dashboard.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
