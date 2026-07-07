@@ -57,6 +57,27 @@
                     }
                   }
                 ]
+              },
+              {
+                "Name": "client-a41315dd-fdee-4ff3-a0c9-01905aa9dc2c",
+                "Properties": {
+                  "MaxDeliveryCount": 3,
+                  "LockDuration": "PT30S",
+                  "DefaultMessageTimeToLive": "PT1H",
+                  "DeadLetteringOnMessageExpiration": false,
+                  "EnableDeadLetteringOnFilterEvaluationExceptions": true
+                },
+                "Rules": [
+                  {
+                    "Name": "clientIdFilter",
+                    "Properties": {
+                      "FilterType": "Sql",
+                      "SqlFilter": {
+                        "SqlExpression": "clientId = 'a41315dd-fdee-4ff3-a0c9-01905aa9dc2c'"
+                      }
+                    }
+                  }
+                ]
               }
             ]
           }

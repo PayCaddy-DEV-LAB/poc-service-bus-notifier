@@ -1,0 +1,108 @@
+### Variables
+@apiClientUrl = http://localhost:3003
+@paycaddyUrl  = https://int.api.paycaddy.dev
+
+
+### ─────────────────────────────────────────────────────────────
+### OPTION 2 — Real PayCaddy API (via api-client proxy on :3003)
+### Requires: npm run mock:api-client + PAYCADDY_API_KEY in .env
+### ─────────────────────────────────────────────────────────────
+
+# Create end-user → publishes enduser.created to the bus on success
+POST {{apiClientUrl}}/v2/SR/EndUserSRs
+Content-Type: application/json
+
+{
+    "email": "sr1asdasd23@gmail.com",
+    "firstName": "Matheus Griza",
+    "lastName": "Estrazulas",
+    "alias": "Matheus Estrazulas",
+    "occupation": "1200",
+    "placeofwork": "PayCaddy",
+    "pep": true,
+    "salary": 100000,
+    "telephone": "+34637068131",
+    "address": {
+        "addressLine1": "CALLE ANGEL",
+        "addressLine2": "CALLE ANGEL",
+        "homeNumber": "9",
+        "city": "Murcia",
+        "region": "Murcia",
+        "postalCode": "30002",
+        "country": "ES"
+    },
+    "nationality": "ES",
+    "countryOfOperations": "ES,IT,BR",
+    "idUrlFront": "https://lipsum.app/640x480/",
+    "idUrlBack": "https://lipsum.app/640x480/",
+    "residenceProofUrl": "https://lipsum.app/640x480/"
+}
+
+
+###
+
+# Create wallet → publishes wallet.created to the bus on success
+POST {{apiClientUrl}}/v1/wallets
+Content-Type: application/json
+
+{
+  "userId": "usr_jane_doe_001",
+  "currency": "USD",
+  "label": "Jane's Main Wallet"
+}
+
+###
+
+# Create debit card → publishes card.created to the bus on success
+POST {{apiClientUrl}}/v1/debitCards
+Content-Type: application/json
+
+{
+  "userId": "usr_jane_doe_001",
+  "walletId": "wlt_001",
+  "cardholderName": "JANE DOE"
+}
+
+
+### ─────────────────────────────────────────────────────────────
+### OPTION 3 — Mock trigger (no real API, any event type/payload)
+### Requires: npm run mock:api-client + npm run consume
+### ─────────────────────────────────────────────────────────────
+
+# Publish user.created directly to the bus
+POST {{apiClientUrl}}/mock/user.created
+Content-Type: application/json
+
+{
+  "userId": "usr_123",
+  "name": "Jane Doe",
+  "email": "jane@acme.com",
+  "createdAt": "2026-07-06T10:00:00Z"
+}
+
+###
+
+# Publish payment.completed directly to the bus
+POST {{apiClientUrl}}/mock/payment.completed
+Content-Type: application/json
+
+{
+  "paymentId": "pay_abc123",
+  "userId": "usr_123",
+  "amount": 250.00,
+  "currency": "USD",
+  "status": "completed"
+}
+
+###
+
+# Publish card.activated directly to the bus
+POST {{apiClientUrl}}/mock/card.activated
+Content-Type: application/json
+
+{
+  "cardId": "crd_xyz789",
+  "userId": "usr_123",
+  "last4": "4242",
+  "activatedAt": "2026-07-06T10:05:00Z"
+}
