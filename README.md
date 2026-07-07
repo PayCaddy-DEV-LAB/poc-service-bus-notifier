@@ -66,7 +66,7 @@ npm run infra:up
 docker logs -f $(docker ps -q --filter ancestor=mcr.microsoft.com/azure-messaging/servicebus-emulator)
 ```
 
-### Running the full flow (4 terminals)
+### Running the full flow (5 terminals)
 
 ```bash
 # Terminal 1 — regular client mock (port 3001)
@@ -75,16 +75,68 @@ npm run mock:regular
 # Terminal 2 — JIT/bank client mock (port 3002)
 npm run mock:jit
 
-# Terminal 3 — consumer worker
+# Terminal 3 — api-client mock / PayCaddy proxy (port 3003)
+npm run mock:api-client
+
+# Terminal 4 — consumer worker
 npm run consume
 
-# Terminal 4 — publish test events
+# Terminal 5 — visual dashboard (http://localhost:3000)
+npm run dashboard
+```
+
+Then trigger events using any of the methods in the **Triggering Events** section below.
+
+---
+
+## Dashboard
+
+A live web dashboard for PoC presentations. Run it with `npm run dashboard` and open `http://localhost:3000`.
+
+**What it shows:**
+- **Overview stats** — total events, delivered count, failed count, DLQ count, and success rate.
+- **Per-client cards** — one card per client with a color-coded breakdown bar (green = delivered, orange = failed, red = DLQ), auth method, and time of last event.
+- **Delivery log** — last 60 entries with status, event type, client name, HTTP response code, attempt number, and timestamp.
+
+The dashboard polls the API every 2 seconds. New rows flash briefly when they appear. No build step or additional dependencies — it runs on the same Express + SQLite stack as the rest of the project.
+
+---
+
+## Triggering Events
+
+Three ways to generate events, from simplest to most realistic:
+
+### Option 1 — Direct producer (any client, any event type)
+
+Publishes straight to Service Bus without going through any HTTP layer. The payload is a generic `{amount, currency, reference}` shape.
+
+```bash
 npm run produce -- --clientId acme --eventType payment.completed --count 2
 npm run produce -- --clientId firstbank --eventType payment.completed --count 2
-
-# Check tracking
-npm run query
+npm run produce -- --clientId a41315dd-fdee-4ff3-a0c9-01905aa9dc2c --eventType user.created
 ```
+
+### Option 2 — Real PayCaddy API (via api-client proxy on port 3003)
+
+Calls the real PayCaddy staging API. On a 2xx response it publishes the corresponding event to the bus. Requires `PAYCADDY_API_KEY` in `.env` and `npm run mock:api-client` running.
+
+| Route | Event published |
+|-------|----------------|
+| `POST /v2/SR/EndUserSRs` | `enduser.created` |
+| `POST /v1/wallets` | `wallet.created` |
+| `POST /v1/debitCards` | `card.created` |
+
+### Option 3 — Mock trigger (no real API, any event type + custom payload)
+
+Publishes any event directly to the bus without calling PayCaddy. Useful when you don't have a valid API key or want to demo a specific payload shape.
+
+```bash
+curl -X POST http://localhost:3003/mock/user.created \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "usr_123", "name": "Jane Doe", "email": "jane@acme.com"}'
+```
+
+All three options are also available as ready-to-send requests in **`requests.http`** (VS Code REST Client format).
 
 ---
 
@@ -102,7 +154,7 @@ npm run query -- --clientId acme
 # Filter by status
 npm run query -- --clientId acme --status FAILED
 
-# Inspect dead-lettered messages for a client
+# Drain and log dead-lettered messages for a client
 npm run check-dlq -- --clientId acme
 ```
 
@@ -112,7 +164,11 @@ npm run check-dlq -- --clientId acme
 |-------------|---------------------------------------------------------------- |
 | `DELIVERED` | HTTP 2xx received from client endpoint                          |
 | `FAILED`    | Delivery attempt failed (non-2xx or network error). Will retry. |
-| `DLQ`       | All retries exhausted. Message in dead-letter queue.            |
+| `DLQ`       | All retries exhausted. Message is in the dead-letter queue.     |
+
+**Important — DLQ status and the dashboard:**
+
+The consumer only reads the main subscription queue. When a message exhausts all retries, Service Bus moves it to the DLQ sub-queue silently — the consumer never sees it again. The `DLQ` status in SQLite (and therefore in the dashboard) is only written when you run `npm run check-dlq`. Until then, the message will show three `FAILED` rows and the DLQ count on the dashboard will remain zero, even though the message is already in the DLQ in the broker.
 
 ---
 
@@ -245,7 +301,9 @@ async function getConfig(clientId: string): Promise<ClientConfig> {
 | Client registry | Hardcoded in `src/config.ts` | Database table, refreshed per-message |
 | Subscription creation | Pre-declared in JSON, emulator restart required | `ServiceBusAdministrationClient` at onboarding |
 | Tracking storage | SQLite (`data/tracking.db`) | Postgres / Azure SQL |
-| DLQ monitoring | Manual `npm run check-dlq` | Continuous DLQ processor + alerting |
+| Dashboard | Local Express server (`npm run dashboard`) | Hosted internal tool backed by production DB |
+| DLQ monitoring | Manual `npm run check-dlq` to sync to SQLite | Continuous DLQ processor + alerting |
+| Event triggering | `requests.http` + mock trigger endpoint | Internal APIs only |
 | Auth secrets | Hardcoded strings | Azure Key Vault |
 | JIT: mTLS | Stubbed (TODO) | `https.Agent` with client cert per bank |
 | JIT: OAuth | Stubbed (TODO) | Client credentials grant with token caching |
